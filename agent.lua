@@ -1,5 +1,6 @@
 -- agent
 require 'torch'
+require 'optim'
 
 local cmd = torch.CmdLine()
 cmd:text()
@@ -65,6 +66,12 @@ WORDVEC_FILE = opt.wordvec_file
 TUTORIAL_WORLD = (opt.tutorial_world==1)
 RANDOM_TEST = (opt.random_test==1)
 ANALYZE_TEST = (opt.analyze_test==1)
+
+
+local logger_val = 
+  optim.Logger(paths.concat(opt.exp_folder,'val.log' ))
+local logger_val_avg = 
+  optim.Logger(paths.concat(opt.exp_folder,'val_avg.log' ))
 
 print(STATE_DIM)
 print("Tutorial world", TUTORIAL_WORLD)
@@ -320,8 +327,14 @@ while step < opt.steps do
             v_history[ind] = agent.v_avg
             td_history[ind] = agent.tderr_avg
             qmax_history[ind] = agent.q_max
+            logger_val_avg:add{
+                ['step'] = step,
+                ['v_avg'] = agent.v_avg,
+                ['tderr_avg'] = agent.tderr_avg,
+                ['g_max'] = agent.q_max -- action value Q
+            }
         end
-        print("V", v_history[ind], "TD error", td_history[ind], "V avg:", v_history[ind])
+        io.flush(print("V", v_history[ind], "TD error", td_history[ind], "V avg:", v_history[ind]))
 
         --saving and plotting
         test_avg_R:add{['% Average Reward'] = total_reward}
@@ -345,10 +358,15 @@ while step < opt.steps do
         reward_counts[ind] = nrewards
         episode_counts[ind] = nepisodes
 
+        logger_val:add{
+            ['step'] = step,
+            ['total_reward'] = total_reward,
+            ['reward_counts']= nrewards,
+            ['epsoid_counts']= nepisodes
+        }
+
         time_history[ind+1] = sys.clock() - start_time
-
         local time_dif = time_history[ind+1] - time_history[ind]
-
         local training_rate = opt.actrep*opt.eval_freq/time_dif
 
         print(string.format(
@@ -358,7 +376,7 @@ while step < opt.steps do
             step, step*opt.actrep, total_reward, agent.ep, agent.lr, time_dif,
             training_rate, eval_time, opt.actrep*opt.eval_steps/eval_time,
             nepisodes, nrewards, pos_reward_cnt/nepisodes))
-
+        io.flush()
 
         pos_reward_cnt = 0
         quest1_reward_cnt = 0
