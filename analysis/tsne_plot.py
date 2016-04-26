@@ -1,16 +1,13 @@
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from nltk.corpus import stopwords
 
 STOPWORDS = stopwords.words('english')
 
-
 #read in tsne data
 f = file('tsne.txt', 'r').read().split('\n')
-
-# plt.subplots_adjust(bottom = 0.1)
-
-
 
 datax = []
 datay = []
