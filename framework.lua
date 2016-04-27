@@ -107,15 +107,14 @@ end
 
 -- starts a new game
 function newGame(gameLogger)
-
 	quest_checklist = {}
 	mislead_quest_checklist = {}
 	STEP_COUNT = 0
 	random_teleport()
 	random_quest()
 
-	if gameLogger then
-	end
+	--if gameLogger then
+	--end
 
 	return getState(gameLogger)
 end
@@ -360,9 +359,9 @@ function getState(logger, print_on)
 
 	if logger then
 		logger:write(table.concat(text, ' '), '\n')
-		logger:write('Reward: '..reward, '\n')
+		logger:write('REWARD: '..reward, '\n')
 		if terminal then
-			logger:write('****************************\n\n')
+			logger:write('END OF EPISODE ****************************\n\n')
 		end
 	end
 	return vector, reward, terminal

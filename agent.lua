@@ -72,6 +72,7 @@ local logger_val =
   optim.Logger(paths.concat(opt.exp_folder,'val.log' ))
 local logger_val_avg = 
   optim.Logger(paths.concat(opt.exp_folder,'val_avg.log' ))
+local gameLogger
 
 print(STATE_DIM)
 print("Tutorial world", TUTORIAL_WORLD)
@@ -83,23 +84,23 @@ require 'optim'
 
 local framework
 if TUTORIAL_WORLD then
-    framework = require 'framework_fantasy'
+  framework = require 'framework_fantasy'
 else
-    framework = require 'framework'
+  framework = require 'framework'
 end
 
 ---------------------------------------------------------------
 
 if not dqn then
-    dqn = {}
-    require 'nn'
-    require 'nngraph'
-    require 'nnutils'
-    require 'NeuralQLearner'
-    require 'TransitionTable'
-    --require 'Rectifier'
-    require 'Embedding'
+  dqn = {}
+  require 'nn'
+  require 'nngraph'
+  require 'nnutils'
+  require 'NeuralQLearner'
+  require 'TransitionTable'
+  require 'Embedding'
 end
+
 --  agent login
 local port = 4000 + opt.game_num
 print(port)
@@ -107,9 +108,11 @@ client_connect(port)
 login('root', 'root')
 
 if TUTORIAL_WORLD then
-    framework.makeSymbolMapping(opt.text_world_location .. 'evennia/contrib/tutorial_world/build.ev')
+  framework.makeSymbolMapping(
+    opt.text_world_location .. 'evennia/contrib/tutorial_world/build.ev')
 else
-    framework.makeSymbolMapping(opt.text_world_location .. 'evennia/contrib/text_sims/build.ev')
+  framework.makeSymbolMapping(
+    opt.text_world_location .. 'evennia/contrib/text_sims/build.ev')
 end
 
 print("#symbols", #symbols)
@@ -118,18 +121,18 @@ EMBEDDING.weight[#symbols+1]:mul(0) --zero out NULL INDEX vector
 
 -- init with word vec
 if opt.use_wordvec==1 then
-    print(WORDVEC_FILE)
-    local wordVec = readWordVec(WORDVEC_FILE)
-    print(#wordVec)
-    for i=1, #symbols do
-        print("wordvec", symbols[i], wordVec[symbols[i]])
-        EMBEDDING.weight[i] = torch.Tensor(wordVec[symbols[i]])
-        assert(EMBEDDING.weight[i]:size(1) == n_hid)
-    end
+  print(WORDVEC_FILE)
+  local wordVec = readWordVec(WORDVEC_FILE)
+  print(#wordVec)
+  for i=1, #symbols do
+    print("wordvec", symbols[i], wordVec[symbols[i]])
+    EMBEDDING.weight[i] = torch.Tensor(wordVec[symbols[i]])
+    assert(EMBEDDING.weight[i]:size(1) == n_hid)
+  end
 else
-    for i=1, #symbols do
-        EMBEDDING.weight[i] = torch.rand(EMBEDDING.weight[i]:size(1))*0.02-0.01
-    end
+  for i=1, #symbols do
+    EMBEDDING.weight[i] = torch.rand(EMBEDDING.weight[i]:size(1))*0.02-0.01
+  end
 end
 
 --- General setup.
@@ -191,266 +194,255 @@ local quest1_reward_cnt, quest2_reward_cnt, quest3_reward_cnt
 print('[Start] Network weight sum:',agent.w:sum())
 
 while step < opt.steps do
-    step = step + 1
-    if not RANDOM_TEST then
-    	xlua.progress(step, opt.steps)
+  step = step + 1
+  if not RANDOM_TEST then
+    xlua.progress(step, opt.steps)
 
-    	local action_index, object_index = agent:perceive(reward, state, terminal, nil, nil, available_objects, priority)
+    local action_index, object_index = agent:perceive(reward, state, terminal, nil, nil, available_objects, priority)
 
-    	if reward > 0 then
-    	    pos_reward_cnt = pos_reward_cnt + 1
-    	end
+    if reward > 0 then pos_reward_cnt = pos_reward_cnt + 1 end
 
-    	-- game over? get next game!
-    	if not terminal then
-    	    state, reward, terminal, available_objects = framework.step(action_index, object_index)
+    -- game over? get next game!
+    if not terminal then
+      state, reward, terminal, available_objects = framework.step(action_index, object_index)
 
-    	    --priority sweeping for positive rewards
-    	    if reward > 0 then
-    	        priority = true
-    	    else
-    	        priority = false
-    	    end
-    	else
-    	    state, reward, terminal, available_objects = framework.newGame()
-    	end
+      --priority sweeping for positive rewards
+      if reward > 0 then priority = true
+      else priority = false end
 
-    	if step % opt.prog_freq == 0 then
-    	    assert(step==agent.numSteps, 'trainer step: ' .. step ..
-    	            ' & agent.numSteps: ' .. agent.numSteps)
-    	    print("\nSteps: ", step, " | Achieved quest level, current reward:" , pos_reward_cnt)
-    	    agent:report()
-    	    pos_reward_cnt = 0
-    	end
-
-    	if step%1000 == 0 then
-    	    collectgarbage()
-    	end
+    else
+      -- end of episode then start a new game
+      state, reward, terminal, available_objects = framework.newGame()
     end
 
-	--Testing
-    if step % opt.eval_freq == 0 and step > learn_start then
-        print('Testing Starts ... ')
-        quest3_reward_cnt = 0
-        quest2_reward_cnt = 0
-        quest1_reward_cnt = 0
-        test_avg_Q = test_avg_Q or optim.Logger(paths.concat(opt.exp_folder , 'test_avgQ.log'))
-        test_avg_R = test_avg_R or optim.Logger(paths.concat(opt.exp_folder , 'test_avgR.log'))
-        test_quest1 = test_quest1 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest1.log'))
-        if TUTORIAL_WORLD then
-            test_quest2 = test_quest2 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest2.log'))
-            test_quest3 = test_quest3 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest3.log'))
+    if step % opt.prog_freq == 0 then
+      assert(step==agent.numSteps, 
+        'trainer step: ' .. step ..  ' & agent.numSteps: ' .. agent.numSteps)
+      print("\nSteps: ", step, " | Achieved quest level, current positive reward count:" , pos_reward_cnt)
+      agent:report()
+      pos_reward_cnt = 0
+    end
+
+    if step%1000 == 0 then collectgarbage() end
+  end
+
+  --Testing
+  if step % opt.eval_freq == 0 and step > learn_start then
+    print('Testing Starts ... ')
+    quest3_reward_cnt = 0
+    quest2_reward_cnt = 0
+    quest1_reward_cnt = 0
+    test_avg_Q = test_avg_Q or optim.Logger(paths.concat(opt.exp_folder , 'test_avgQ.log'))
+    test_avg_R = test_avg_R or optim.Logger(paths.concat(opt.exp_folder , 'test_avgR.log'))
+    test_quest1 = test_quest1 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest1.log'))
+    if TUTORIAL_WORLD then
+      test_quest2 = test_quest2 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest2.log'))
+      test_quest3 = test_quest3 or optim.Logger(paths.concat(opt.exp_folder , 'test_quest3.log'))
+    end
+
+    -- start to write gaem log (s,a,r,s,a,r~)
+    gameLogger = gameLogger or io.open(paths.concat(opt.exp_folder, 'game.log'), 'w')
+    state, reward, terminal, available_objects = framework.newGame(gameLogger)
+
+    total_reward = 0
+    nrewards = 0
+    nepisodes = 0
+    episode_reward = 0
+
+    local eval_time = sys.clock()
+    for estep=1,opt.eval_steps do
+      xlua.progress(estep, opt.eval_steps)
+
+      local action_index, object_index, q_func
+      if not RANDOM_TEST then
+        action_index, object_index, q_func = agent:perceive(reward, state, terminal, true, 0.05, available_objects)
+      else
+        action_index, object_index, q_func = agent:perceive(reward, state, terminal, true, 1, available_objects)
+      end
+
+      -- print Q function for previous state
+      if q_func then
+        local actions = framework.getActions()
+        local objects = framework.getObjects()
+        for i=1, #actions do
+          gameLogger:write(actions[i],' ', q_func[1][i],'\n')
         end
+        gameLogger:write("-----\n")
+        for i=1, #objects do
+          gameLogger:write(objects[i],' ', q_func[2][i], '\n')
+        end
+      else
+        gameLogger:write("RANDOM ACTION(EXPLORATION)\n")
+      end
 
-        gameLogger = gameLogger or io.open(paths.concat(opt.exp_folder, 'game.log'), 'w')
+      -- Play game in test mode (episodes don't end when losing a life)
+      state, reward, terminal, available_objects = framework.step(action_index, object_index, gameLogger)
 
-        state, reward, terminal, available_objects = framework.newGame(gameLogger)
+      if TUTORIAL_WORLD then
+        if(reward > 9) then
+          quest1_reward_cnt =quest1_reward_cnt+1
+        elseif reward > 0.9 then
+          quest2_reward_cnt = quest2_reward_cnt + 1
+        elseif reward > 0 then
+          quest3_reward_cnt = quest3_reward_cnt + 1 --defeat guardian
+        end
+      else
+        if(reward > 0.9) then
+          quest1_reward_cnt =quest1_reward_cnt+1
+        end
+      end
 
-        total_reward = 0
-        nrewards = 0
-        nepisodes = 0
+      if estep%1000 == 0 then collectgarbage() end
+
+      -- record every reward
+      episode_reward = episode_reward + reward
+      if reward ~= 0 then nrewards = nrewards + 1 end
+
+      if terminal then
+        total_reward = total_reward + episode_reward
         episode_reward = 0
-
-        local eval_time = sys.clock()
-        for estep=1,opt.eval_steps do
-            xlua.progress(estep, opt.eval_steps)
-
-            local action_index, object_index, q_func
-            if not RANDOM_TEST then
-                action_index, object_index, q_func = agent:perceive(reward, state, terminal, true, 0.05, available_objects)
-            else
-                action_index, object_index, q_func = agent:perceive(reward, state, terminal, true, 1, available_objects)
-            end
-
-             -- print Q function for previous state
-            if q_func then
-                local actions = framework.getActions()
-                local objects = framework.getObjects()
-                for i=1, #actions do
-                    gameLogger:write(actions[i],' ', q_func[1][i],'\n')
-                end
-                gameLogger:write("-----\n")
-                for i=1, #objects do
-                    gameLogger:write(objects[i],' ', q_func[2][i], '\n')
-                end
-
-            else
-                gameLogger:write("Random action\n")
-            end
-
-            -- Play game in test mode (episodes don't end when losing a life)
-	        state, reward, terminal, available_objects = framework.step(action_index, object_index, gameLogger)
-
-            if TUTORIAL_WORLD then
-                if(reward > 9) then
-                    quest1_reward_cnt =quest1_reward_cnt+1
-                elseif reward > 0.9 then
-                    quest2_reward_cnt = quest2_reward_cnt + 1
-                elseif reward > 0 then
-                    quest3_reward_cnt = quest3_reward_cnt + 1 --defeat guardian
-                end
-            else
-                if(reward > 0.9) then
-                    quest1_reward_cnt =quest1_reward_cnt+1
-                end
-            end
-
-            if estep%1000 == 0 then collectgarbage() end
-
-            -- record every reward
-            episode_reward = episode_reward + reward
-            if reward ~= 0 then
-               nrewards = nrewards + 1
-            end
-
-            if terminal then
-                total_reward = total_reward + episode_reward
-                episode_reward = 0
-                nepisodes = nepisodes + 1
-                state, reward, terminal, available_objects = framework.newGame(gameLogger)
-            end
-        end
-
-        eval_time = sys.clock() - eval_time
-        start_time = start_time + eval_time
-	if not RANDOM_TEST then
-            agent:compute_validation_statistics()
-	end
-        local ind = #reward_history+1
-        total_reward = total_reward/math.max(1, nepisodes)
-
-        if #reward_history == 0 or total_reward > torch.Tensor(reward_history):max() then
-            agent.best_network = agent.network:clone()
-        end
-
-        if agent.v_avg then
-            v_history[ind] = agent.v_avg
-            td_history[ind] = agent.tderr_avg
-            qmax_history[ind] = agent.q_max
-            logger_val_avg:add{
-                ['step'] = step,
-                ['v_avg'] = agent.v_avg,
-                ['tderr_avg'] = agent.tderr_avg,
-                ['g_max'] = agent.q_max -- action value Q
-            }
-        end
-        io.flush(print("V", v_history[ind], "TD error", td_history[ind], "V avg:", v_history[ind]))
-
-        --saving and plotting
-        test_avg_R:add{['% Average Reward'] = total_reward}
-        test_avg_Q:add{['% Average Q'] = agent.v_avg}
-        test_quest1:add{['% Quest 1'] = quest1_reward_cnt/nepisodes}
-        if TUTORIAL_WORLD then
-            test_quest2:add{['% Quest 2'] = quest2_reward_cnt/nepisodes}
-            test_quest3:add{['% Quest 3'] = quest3_reward_cnt/nepisodes}
-        end
-
-        test_avg_R:style{['% Average Reward'] = '-'}; test_avg_R:plot()
-        test_avg_Q:style{['% Average Q'] = '-'}; test_avg_Q:plot()
-        test_quest1:style{['% Quest 1'] = '-'}; test_quest1:plot()
-        if TUTORIAL_WORLD then
-            test_quest2:style{['% Quest 2'] = '-'}; test_quest2:plot()
-            test_quest3:style{['% Quest 3'] = '-'}; test_quest3:plot()
-        end
-
-
-        reward_history[ind] = total_reward
-        reward_counts[ind] = nrewards
-        episode_counts[ind] = nepisodes
-
-        logger_val:add{
-            ['step'] = step,
-            ['total_reward'] = total_reward,
-            ['reward_counts']= nrewards,
-            ['epsoid_counts']= nepisodes
-        }
-
-        time_history[ind+1] = sys.clock() - start_time
-        local time_dif = time_history[ind+1] - time_history[ind]
-        local training_rate = opt.actrep*opt.eval_freq/time_dif
-
-        print(string.format(
-            '\nSteps: %d (frames: %d), reward: %.2f, epsilon: %.2f, lr: %G, ' ..
-            'training time: %ds, training rate: %dfps, testing time: %ds, ' ..
-            'testing rate: %dfps,  num. ep.: %d,  num. rewards: %d, completion rate: %.2f',
-            step, step*opt.actrep, total_reward, agent.ep, agent.lr, time_dif,
-            training_rate, eval_time, opt.actrep*opt.eval_steps/eval_time,
-            nepisodes, nrewards, pos_reward_cnt/nepisodes))
-        io.flush()
-
-        pos_reward_cnt = 0
-        quest1_reward_cnt = 0
-        gameLogger:write("###############\n\n") --end of testing epoch
-        print('Testing Ends ... ')
-        collectgarbage()
+        nepisodes = nepisodes + 1
+        state, reward, terminal, available_objects = framework.newGame(gameLogger)
+      end
     end
 
-    if step % opt.save_freq == 0 or step == opt.steps then
-        local s, a, r, s2, term = agent.valid_s, agent.valid_a, agent.valid_r,
-            agent.valid_s2, agent.valid_term
-        agent.valid_s, agent.valid_a, agent.valid_r, agent.valid_s2,
-            agent.valid_term = nil, nil, nil, nil, nil, nil, nil
-        local w, dw, g, g2, delta, delta2, deltas, tmp = agent.w, agent.dw,
-            agent.g, agent.g2, agent.delta, agent.delta2, agent.deltas, agent.tmp
-        agent.w, agent.dw, agent.g, agent.g2, agent.delta, agent.delta2,
-            agent.deltas, agent.tmp = nil, nil, nil, nil, nil, nil, nil, nil
-
-        local filename = opt.name
-        torch.save(filename .. ".t7", {agent = agent,
-                                model = agent.network,
-                                best_model = agent.best_network,
-                                reward_history = reward_history,
-                                reward_counts = reward_counts,
-                                episode_counts = episode_counts,
-                                time_history = time_history,
-                                v_history = v_history,
-                                td_history = td_history,
-                                qmax_history = qmax_history,
-                                arguments=opt})
-        if opt.saveNetworkParams then
-            print('Network weight sum:', w:sum())
-            local nets = {network=w:clone():float()}
-            torch.save(filename..'.params.t7', nets, 'ascii')
-        end
-
-        -- save word embeddings
-        embedding_mat = EMBEDDING:forward(torch.range(1, #symbols+1))
-        embedding_save = {}
-        for i=1, embedding_mat:size(1)-1 do
-            embedding_save[symbols[i]] = embedding_mat[i]
-        end
-        embedding_save["NULL"] = embedding_mat[embedding_mat:size(1)]
-
-        -- description embeddings
-        local desc_embeddings
-        if ANALYZE_TEST then
-            require 'descriptions'
-            desc_embeddings = {}
-            for i=1, #DESCRIPTIONS do
-                local embeddings = {}
-                for j=1, #DESCRIPTIONS[i] do
-                    local input_vec = framework.vector_function(DESCRIPTIONS[i][j])
-                    local state_tmp = tensor_to_table(input_vec, self.state_dim, self.hist_len)
-                    local output_vec = LSTM_MODEL:forward(state_tmp)
-                    table.insert(embeddings, output_vec)
-                end
-                table.insert(desc_embeddings, embeddings)
-            end
-        end
-
-
-        torch.save(filename..'.embeddings.t7', {embeddings = embedding_save, symbols=symbols, desc_embeddings=desc_embeddings})
-
-        agent.valid_s, agent.valid_a, agent.valid_r, agent.valid_s2,
-            agent.valid_term = s, a, r, s2, term
-        agent.w, agent.dw, agent.g, agent.g2, agent.delta, agent.delta2,
-            agent.deltas, agent.tmp = w, dw, g, g2, delta, delta2, deltas, tmp
-        print('Saved:', filename .. '.t7')
-        io.flush()
-        collectgarbage()
-
-        if ANALYZE_TEST then
-            return
-        end
+    eval_time = sys.clock() - eval_time
+    start_time = start_time + eval_time
+    if not RANDOM_TEST then
+      agent:compute_validation_statistics()
     end
+    local ind = #reward_history+1
+    total_reward = total_reward/math.max(1, nepisodes)
+
+    if #reward_history == 0 or total_reward > torch.Tensor(reward_history):max() then
+      agent.best_network = agent.network:clone()
+    end
+
+    if agent.v_avg then
+      v_history[ind] = agent.v_avg
+      td_history[ind] = agent.tderr_avg
+      qmax_history[ind] = agent.q_max
+      logger_val_avg:add{
+        ['step'] = step,
+        ['v_avg'] = agent.v_avg,
+        ['tderr_avg'] = agent.tderr_avg,
+        ['g_max'] = agent.q_max -- action value Q
+      }
+    end
+    io.flush(print("V", v_history[ind], "TD error", td_history[ind], "V avg:", v_history[ind]))
+
+    --saving and plotting
+    test_avg_R:add{['% Average Reward'] = total_reward}
+    test_avg_Q:add{['% Average Q'] = agent.v_avg}
+    test_quest1:add{['% Quest 1'] = quest1_reward_cnt/nepisodes}
+    if TUTORIAL_WORLD then
+      test_quest2:add{['% Quest 2'] = quest2_reward_cnt/nepisodes}
+      test_quest3:add{['% Quest 3'] = quest3_reward_cnt/nepisodes}
+    end
+    test_avg_R:style{['% Average Reward'] = '-'}; test_avg_R:plot()
+    test_avg_Q:style{['% Average Q'] = '-'}; test_avg_Q:plot()
+    test_quest1:style{['% Quest 1'] = '-'}; test_quest1:plot()
+    if TUTORIAL_WORLD then
+      test_quest2:style{['% Quest 2'] = '-'}; test_quest2:plot()
+      test_quest3:style{['% Quest 3'] = '-'}; test_quest3:plot()
+    end
+
+    reward_history[ind] = total_reward
+    reward_counts[ind] = nrewards
+    episode_counts[ind] = nepisodes
+
+    logger_val:add{
+      ['step'] = step,
+      ['total_reward'] = total_reward,
+      ['reward_counts']= nrewards,
+      ['epsoid_counts']= nepisodes
+    }
+
+    time_history[ind+1] = sys.clock() - start_time
+    local time_dif = time_history[ind+1] - time_history[ind]
+    local training_rate = opt.actrep*opt.eval_freq/time_dif
+
+    print(string.format(
+      '\nSteps: %d (frames: %d), reward: %.2f, epsilon: %.2f, lr: %G, ' ..
+      'training time: %ds, training rate: %dfps, testing time: %ds, ' ..
+      'testing rate: %dfps,  num. ep.: %d,  num. rewards: %d, completion rate: %.2f',
+      step, step*opt.actrep, total_reward, agent.ep, agent.lr, time_dif,
+      training_rate, eval_time, opt.actrep*opt.eval_steps/eval_time,
+      nepisodes, nrewards, pos_reward_cnt/nepisodes))
+    io.flush()
+
+    pos_reward_cnt = 0
+    quest1_reward_cnt = 0
+    gameLogger:write("END OF TESTING EPOHC ###############\n\n") --end of testing epoch
+    print('TESTING ENDS')
+    collectgarbage()
+  end
+
+  if step % opt.save_freq == 0 or step == opt.steps then
+    local s, a, r, s2, term = 
+      agent.valid_s, agent.valid_a, agent.valid_r, agent.valid_s2, agent.valid_term
+    agent.valid_s, agent.valid_a, agent.valid_r, agent.valid_s2, agent.valid_term = 
+      nil, nil, nil, nil, nil, nil, nil
+    local w, dw, g, g2, delta, delta2, deltas, tmp = 
+      agent.w, agent.dw, agent.g, agent.g2, agent.delta, agent.delta2, agent.deltas, agent.tmp
+    agent.w, agent.dw, agent.g, agent.g2, agent.delta, agent.delta2, agent.deltas, agent.tmp = 
+      nil, nil, nil, nil, nil, nil, nil, nil
+
+    local filename = opt.name
+    torch.save(filename .. ".t7", 
+      {agent = agent,
+       model = agent.network,
+       best_model = agent.best_network,
+       reward_history = reward_history,
+       reward_counts = reward_counts,
+       episode_counts = episode_counts,
+       time_history = time_history,
+       v_history = v_history,
+       td_history = td_history,
+       qmax_history = qmax_history,
+       arguments=opt })
+    if opt.saveNetworkParams then
+      print('Network weight sum:', w:sum())
+      local nets = {network=w:clone():float()}
+      torch.save(filename..'.params.t7', nets, 'ascii')
+    end
+
+    -- save word embeddings
+    embedding_mat = EMBEDDING:forward(torch.range(1, #symbols+1))
+    embedding_save = {}
+    for i=1, embedding_mat:size(1)-1 do
+      embedding_save[symbols[i]] = embedding_mat[i]
+    end
+    embedding_save["NULL"] = embedding_mat[embedding_mat:size(1)]
+
+    -- description embeddings
+    local desc_embeddings
+    if ANALYZE_TEST then
+      require 'descriptions'
+      desc_embeddings = {}
+      for i=1, #DESCRIPTIONS do
+        local embeddings = {}
+        for j=1, #DESCRIPTIONS[i] do
+          local input_vec = framework.vector_function(DESCRIPTIONS[i][j])
+          local state_tmp = tensor_to_table(input_vec, self.state_dim, self.hist_len)
+          local output_vec = LSTM_MODEL:forward(state_tmp)
+          table.insert(embeddings, output_vec)
+        end
+        table.insert(desc_embeddings, embeddings)
+      end
+    end
+
+    torch.save(filename..'.embeddings.t7', {embeddings = embedding_save, symbols=symbols, desc_embeddings=desc_embeddings})
+
+    agent.valid_s, agent.valid_a, agent.valid_r, agent.valid_s2, agent.valid_term = 
+      s, a, r, s2, term
+    agent.w, agent.dw, agent.g, agent.g2, agent.delta, agent.delta2, agent.deltas, agent.tmp = 
+      w, dw, g, g2, delta, delta2, deltas, tmp
+
+    print('Saved:', filename .. '.t7')
+    io.flush()
+    collectgarbage()
+
+    if ANALYZE_TEST then return end
+  end
 end
